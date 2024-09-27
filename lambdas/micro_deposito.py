@@ -26,37 +26,24 @@ CONTACERTA_API_CLIENT_ID= os.getenv('CONTACERTA_API_CLIENT_ID')
 CONTACERTA_API_CLIENT_SECRET= os.getenv('CONTACERTA_API_CLIENT_SECRET')
 USER_AGENT= os.getenv('USER_AGENT')
 
-# Inicialização das variáveis globais
-token_de_acesso = None
-token_expirado = None
-
-
 def lambda_handler(event, context):
-
-    global token_de_acesso, token_expirado
-
-    if token_de_acesso is None or datetime.now() >= token_expirado:
+    try:
         token_de_acesso, token_expirado = token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT)
 
-    if 'body' in event:
-        try:
-            dados_bancarios = json.loads(event['body'])
-            micro_deposito(dados_bancarios, token_de_acesso)
+        dados_bancarios = json.loads(event['body'])
 
-            return{
-                'statusCode': 200,
-                'body': json.dumps({'message': 'Dados processados com sucesso'})
-            }
-        except json.JSONDecodeError:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'message': 'Erro ao decodificar JSON'})
-            }
-    else:
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'message': 'Corpo do evento não encontrado'})
+        micro_deposito(dados_bancarios, token_de_acesso)
+
+        return{
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Dados processados com sucesso'})
         }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps("Erro interno no servidor. Verifique os logs para mais detalhes.")
+        }
+   
 
 def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT):
     url = f'{LOGIN_API_HOST}/authorization'
@@ -77,9 +64,12 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
     logger.info(f"Status code: {response.status_code}")
     logger.info(f"Response token_de_autorizacao: {response.text}")
 
+    # Verificação do status da resposta
     if response.status_code != 200:
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
     
+
+    # Processamento do conteúdo da resposta, após a verificação do status
     info_token = response.json()
 
     token = info_token.get('access_token')
@@ -100,17 +90,6 @@ def micro_deposito(payload, token):
         "content-type": "application/json"
     }
 
-    payload = {
-        "name": "Fulano de Souza",
-        "cpf_cnpj": "01234567899",
-        "bank_code": "237",
-        "agency": "1212",
-        "account": "1234567",
-        "account_digit": "9",
-        "account_type": "CONTA_CORRENTE",
-        "pix_description": ""
-    }
-
     response = requests.post(url, headers=headers, json=payload)
 
     logger.info(f"Status code: {response.status_code}")
@@ -122,16 +101,16 @@ def micro_deposito(payload, token):
 
 
 if __name__ == "__main__":
-    dados_bancarios = [{
+    dados_bancarios = {
         "name": "Fulana",
-        "cpf_cnpj": "27084098000169",
+        "cpf_cnpj": "35271636598",
         "bank_code": "341",
-        "agency": "8842",
-        "account": "47600",
+        "agency": "7212",
+        "account": "09708",
         "account_digit": "7",
         "account_type": "CONTA_CORRENTE",
         "pix_description": ""
-    }]
+    }
 
     dados_clientes_json = json.dumps(dados_bancarios, ensure_ascii=False, indent=4)
 
