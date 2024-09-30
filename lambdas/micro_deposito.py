@@ -103,11 +103,11 @@ def micro_deposito(payload, token):
 if __name__ == "__main__":
     dados_bancarios = {
         "name": "Fulana",
-        "cpf_cnpj": "35271636598",
+        "cpf_cnpj": "35271737598",
         "bank_code": "341",
-        "agency": "7212",
-        "account": "09708",
-        "account_digit": "7",
+        "agency": "7214",
+        "account": "09799",
+        "account_digit": "1",
         "account_type": "CONTA_CORRENTE",
         "pix_description": ""
     }
