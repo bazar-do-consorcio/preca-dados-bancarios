@@ -102,14 +102,14 @@ def micro_deposito(payload, token):
 
 if __name__ == "__main__":
     dados_bancarios = {
-        "name": "Fulana",
-        "cpf_cnpj": "35271737598",
-        "bank_code": "341",
-        "agency": "7214",
-        "account": "09799",
-        "account_digit": "1",
+        "name": "Transfeera Pagamentos",
+        "cpf_cnpj": "27084098000169",
+        "bank_code": "237",
+        "agency": "2232",
+        "account": "40605",
+        "account_digit": "8",
         "account_type": "CONTA_CORRENTE",
-        "pix_description": ""
+        "integration_id": ""
     }
 
     dados_clientes_json = json.dumps(dados_bancarios, ensure_ascii=False, indent=4)
