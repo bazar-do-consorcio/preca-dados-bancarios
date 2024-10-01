@@ -37,13 +37,17 @@ def processar_webhook_resposta(body):
     validacao_data = resposta['data']
 
     if validacao_data.get('valid') is True:
-        dados_validos = 'VALIDO' 
+        dados_validos = 'VALIDO',
+        comprovante_url = validacao_data.get('receipt_url', 'URL_COMPROVANTE_DESCONHECIDA')
 
         # Atualizar campos no Pipefy
         atualizar_campos_pipefy(
             node_id="971537587",
             dados_validos=dados_validos
         )
+
+        # Anexar o comprovante PDF ao campo "comprovante_microdep_sito"
+        anexar_comprovante_pipefy("971537587", comprovante_url)
 
         return {
             'statusCode': 200,
@@ -100,6 +104,44 @@ def formatar_erros(erros):
         mensagens_formatadas.append(f'{campo_formatado}: {mensagem}')
 
     return '. '.join(mensagens_formatadas)
+
+
+def anexar_comprovante_pipefy(card_id, attachment_url):
+    mutation = """
+    mutation ($card_id: ID!, $field_id: String!, $attachment_url: String!) {
+      updateCardField(input: {
+        card_id: $card_id,
+        field_id: $field_id,
+        new_value: [$attachment_url]
+      }) {
+        clientMutationId
+        success
+      }
+    }
+    """
+    variables = {
+        "card_id": card_id,
+        "field_id": "comprovante_microdep_sito",
+        "attachment_url": attachment_url
+    }
+
+    data = {
+        'query': mutation,
+        'variables': variables
+    }
+
+    headers = {
+        "Authorization": f"Bearer {PIPEFY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(URL_PIPEFY, json=data, headers=headers)
+
+    if response.status_code == 200:
+        logger.info("Comprovante anexado com sucesso: %s", response.json())
+    else:
+        logger.error("Erro ao anexar comprovante: %s - %s", response.status_code, response.text)
+
 
 
 
