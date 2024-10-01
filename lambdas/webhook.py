@@ -62,18 +62,13 @@ def processar_webhook_resposta(body):
     else:
         # Cenário de erro
         erros = validacao_data.get('errors', [])
-        erros_formatados = [
-            {
-                'campo': erro['field'],
-                'mensagem': erro['message']
-            } for erro in erros
-        ]
+        erros_formatados = formatar_erros(erros)
 
         # Atualizar campos no Pipefy com erro
         atualizar_campos_pipefy(
             node_id="971537587",
             dados_validos="INVALIDO",
-            erro_dados_bancarios=json.dumps(erros_formatados, ensure_ascii=False)
+            erro_dados_bancarios=erros_formatados
         )
 
         return {
@@ -83,6 +78,30 @@ def processar_webhook_resposta(body):
                 'errors': erros_formatados
             }, ensure_ascii=False)
         }
+
+def formatar_erros(erros):
+    mapa_campos = {
+        "name": "Nome",
+        "cpf_cnpj": "CPF_CNPJ",
+        "bank_code": "Código do Banco",
+        "agency": "Agência",
+        "account": "Conta",
+        "account_digit": "Dígito da Conta",
+        "account_type": "Tipo de Conta"
+    }
+
+    mensagens_formatadas = []
+
+    for erro in erros:
+        campo = erro['field']
+        mensagem = erro['message']
+
+        campo_formatado = mapa_campos.get(campo, campo)
+        mensagens_formatadas.append(f'{campo_formatado}: {mensagem}')
+
+    return '. '.join(mensagens_formatadas)
+
+
 
 def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None):
     mutation = """
