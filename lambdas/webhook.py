@@ -24,7 +24,8 @@ PIPEFY_TOKEN = os.getenv('PIPEFY_TOKEN')
 def lambda_handler(event, context):
    
     try:
-        resultado = processar_webhook_resposta(event['body'])
+        card_id = '971537587'
+        resultado = processar_webhook_resposta(event['body'], card_id)
         return resultado
     except Exception as e:
         return {
@@ -33,8 +34,14 @@ def lambda_handler(event, context):
         }
     
     
-def processar_webhook_resposta(body):
+def processar_webhook_resposta(body, card_id):
     resposta = json.loads(body)
+
+    if not verifica_fase_do_card(card_id):
+        logger.error("O card não está na fase correta")
+        raise Exception("Card não está na fase correta")
+    
+    campos = obter_campos_do_card(card_id)
 
     # Cenário de Sucesso
     validacao_data = resposta['data']
@@ -94,6 +101,80 @@ def processar_webhook_resposta(body):
             }, ensure_ascii=False)
         }
 
+def verifica_fase_do_card(card_id):
+    id_fase_desejada = '323453823'
+    nome_fase_desejada = 'Coleta de Documentos'
+
+    query = """
+        query {
+            card(id: "%s") {
+                id
+                current_phase {
+                    id
+                    name
+                }
+            }
+        }
+    """ % card_id
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('PIPEFY_TOKEN')}",
+        "Content-Type": "application/json"
+    }
+
+    data = {'query': query}
+    response = requests.post(URL_PIPEFY, json=data, headers=headers)
+
+    if response.status_code == 200:
+        response_json = response.json()
+
+        card = response_json.get('data', {}).get('card', {})
+        current_phase_id = card.get('current_phase', {}).get('id', '')
+        current_phase_name = card.get('current_phase', {}).get('name', '')
+
+        logger.info("Card ID: %s", card_id)
+        logger.info("Fase Atual: %s (ID: %s)", current_phase_name, current_phase_id)
+
+        return current_phase_id == id_fase_desejada and current_phase_name == nome_fase_desejada
+    else:
+        logger.error("Falha na requisição: %s", response.status_code)
+        logger.error("Resposta da API: %s", response.text)
+        return False
+
+def obter_campos_do_card(card_id):
+    query = """
+        query {
+            card(id: "%s") {
+                id
+                title
+                fields {
+                    name
+                    value
+                }
+            }
+        }
+    """ % card_id
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('PIPEFY_TOKEN')}",
+        "Content-Type": "application/json"
+    }
+
+    data = {'query': query}
+    response = requests.post(URL_PIPEFY, json=data, headers=headers)
+
+    if response.status_code == 200:
+        response_json = response.json()
+        card_fields = response_json.get('data', {}).get('card', {}).get('fields', [])
+        
+        for field in card_fields:
+            logger.info("Campo: %s, Valor: %s", field.get('name'), field.get('value'))
+            
+        return card_fields
+    else:
+        logger.error("Falha na requisição: %s", response.status_code)
+        logger.error("Resposta da API: %s", response.text)
+        return None
 
 
 # def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios):
