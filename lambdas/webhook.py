@@ -2,13 +2,11 @@ import json
 import logging
 import requests
 import os
-
 from dotenv import load_dotenv
 
 # Criação do logger e definição do nível de log
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
 
 if not logger.hasHandlers():
     # Configuração do manipulador para saída no terminal
@@ -22,50 +20,35 @@ URL_PIPEFY = os.getenv('URL_PIPEFY')
 PIPEFY_TOKEN = os.getenv('PIPEFY_TOKEN')
 
 def lambda_handler(event, context):
-   
     try:
-        card_id = '971537587'
-        resultado = processar_webhook_resposta(event['body'], card_id)
+        resultado = processar_webhook_resposta(event['body'])
         return resultado
     except Exception as e:
+        logger.error("Erro interno no servidor: %s", str(e))
         return {
             'statusCode': 500,
             'body': json.dumps("Erro interno no servidor. Verifique os logs para mais detalhes.", ensure_ascii=False)
         }
     
-    
-def processar_webhook_resposta(body, card_id):
+def processar_webhook_resposta(body):
     resposta = json.loads(body)
-
-    if not verifica_fase_do_card(card_id):
-        logger.error("O card não está na fase correta")
-        raise Exception("Card não está na fase correta")
-    
-    campos = obter_campos_do_card(card_id)
 
     # Cenário de Sucesso
     validacao_data = resposta['data']
 
     if validacao_data.get('valid') is True:
-        # dados_validos = 'VALIDO'
-        # erro_dados_bancarios = ""  # Ajuste aqui, se necessário
-        comprovante_microdeposito = validacao_data.get('receipt_url', 'RECIBO_NAO_DISPONIVEL')
+        dados_validos = 'VALIDO' 
 
         # Atualizar campos no Pipefy
-        # atualizar_campos_pipefy(
-        #     node_id="971537587",
-        #     dados_validos=dados_validos,
-        #     erro_dados_bancarios=erro_dados_bancarios
-        # )
+        atualizar_campos_pipefy(
+            node_id="971537587",
+            dados_validos=dados_validos
+        )
 
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Conta validada com sucesso',
-                'status': validacao_data.get('micro_deposit_status', 'STATUS_DESCONHECIDO'),
-                'deposit_method': validacao_data.get('micro_deposit_method', 'METODO_DESCONHECIDO'),
-                'bank_code': validacao_data.get('bank_code', 'BANCO_DESCONHECIDO'),
-                'receipt_url': comprovante_microdeposito,
                 'account_info': {
                     'agencia': validacao_data['data'].get('agency', 'AGENCIA_DESCONHECIDA'),
                     'conta': validacao_data['data'].get('account', 'CONTA_DESCONHECIDA'),
@@ -87,11 +70,11 @@ def processar_webhook_resposta(body, card_id):
         ]
 
         # Atualizar campos no Pipefy com erro
-        # atualizar_campos_pipefy(
-        #     node_id="971537587",  # Aqui deve ser o node_id correto
-        #     dados_validos="INVALIDO",
-        #     erro_dados_bancarios=json.dumps(erros_formatados)
-        # )
+        atualizar_campos_pipefy(
+            node_id="971537587",
+            dados_validos="INVALIDO",
+            erro_dados_bancarios=json.dumps(erros_formatados, ensure_ascii=False)
+        )
 
         return {
             'statusCode': 400,
@@ -101,196 +84,123 @@ def processar_webhook_resposta(body, card_id):
             }, ensure_ascii=False)
         }
 
-def verifica_fase_do_card(card_id):
-    id_fase_desejada = '323453823'
-    nome_fase_desejada = 'Coleta de Documentos'
-
-    query = """
-        query {
-            card(id: "%s") {
-                id
-                current_phase {
-                    id
-                    name
-                }
-            }
+def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None):
+    mutation = """
+    mutation ($nodeId: ID!, $values: [NodeFieldValueInput!]!) {
+        updateFieldsValues(input: {
+            nodeId: $nodeId,
+            values: $values
+        }) {
+            clientMutationId
         }
-    """ % card_id
+    }
+    """
 
+    values = [
+        {'fieldId': "dados_v_lidos", 'value': dados_validos},
+    ]
+
+    if erro_dados_bancarios is not None:
+        values.append({'fieldId': "erro_dados_bancarios", 'value': erro_dados_bancarios})
+
+    variables = {
+        'nodeId': node_id,
+        'values': values
+    }
+
+    data = {'query': mutation, 'variables': variables}
     headers = {
-        "Authorization": f"Bearer {os.getenv('PIPEFY_TOKEN')}",
+        "Authorization": f"Bearer {PIPEFY_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    data = {'query': query}
+    logger.info("Enviando mutação para o Pipefy: %s", data)
+
     response = requests.post(URL_PIPEFY, json=data, headers=headers)
 
     if response.status_code == 200:
-        response_json = response.json()
-
-        card = response_json.get('data', {}).get('card', {})
-        current_phase_id = card.get('current_phase', {}).get('id', '')
-        current_phase_name = card.get('current_phase', {}).get('name', '')
-
-        logger.info("Card ID: %s", card_id)
-        logger.info("Fase Atual: %s (ID: %s)", current_phase_name, current_phase_id)
-
-        return current_phase_id == id_fase_desejada and current_phase_name == nome_fase_desejada
+        logger.info("Campos atualizados com sucesso: %s", response.json())
     else:
-        logger.error("Falha na requisição: %s", response.status_code)
-        logger.error("Resposta da API: %s", response.text)
-        return False
-
-def obter_campos_do_card(card_id):
-    query = """
-        query {
-            card(id: "%s") {
-                id
-                title
-                fields {
-                    name
-                    value
-                }
-            }
-        }
-    """ % card_id
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('PIPEFY_TOKEN')}",
-        "Content-Type": "application/json"
-    }
-
-    data = {'query': query}
-    response = requests.post(URL_PIPEFY, json=data, headers=headers)
-
-    if response.status_code == 200:
-        response_json = response.json()
-        card_fields = response_json.get('data', {}).get('card', {}).get('fields', [])
-        
-        for field in card_fields:
-            logger.info("Campo: %s, Valor: %s", field.get('name'), field.get('value'))
-            
-        return card_fields
-    else:
-        logger.error("Falha na requisição: %s", response.status_code)
-        logger.error("Resposta da API: %s", response.text)
-        return None
-
-
-# def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios):
-#     mutation = """
-#     mutation ($nodeId: ID!, $dadosValidos: String!, $erroDadosBancarios: String!) {
-#         updateFieldsValues(input: {
-#             nodeId: $nodeId,
-#             values: [
-#                 {fieldId: "dados_v_lidos", value: $dadosValidos},
-#                 {fieldId: "erro_dados_bancarios", value: $erroDadosBancarios}
-#             ]
-#         }) {
-#             clientMutationId
-#         }
-#     }
-#     """
-
-#     variables = {
-#         'nodeId': node_id,
-#         'dadosValidos': dados_validos,
-#         'erroDadosBancarios': erro_dados_bancarios
-#     }
-
-#     data = {'query': mutation, 'variables': variables}
-#     headers = {
-#         "Authorization": f"Bearer {os.getenv('PIPEFY_TOKEN')}",
-#         "Content-Type": "application/json"
-#     }
-
-#     logger.info("Enviando mutação para o Pipefy: %s", data)
-
-#     response = requests.post(URL_PIPEFY, json=data, headers=headers)
-
-#     if response.status_code == 200:
-#         logger.info("Campos atualizados com sucesso: %s", response.json())
-#     else:
-#         logger.error("Erro ao atualizar os campos: %s - %s", response.status_code, response.text)
+        logger.error("Erro ao atualizar os campos: %s - %s", response.status_code, response.text)
 
 
 if __name__ == "__main__":
 
     node_id  = 971537587
     dados_bancarios = {
-        # "version": "v1",
-        # "id": "053d4115-464c-45eb-b026-a7040690fa9a",
-        # "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
-        # "object": "Validation",
-        # "date": "2024-09-30T09:37:32-03:00",
-        # "data": {
-        #     "id": "125c310d-f208-47ef-a235-9524f08a5c4e",
-        #     "integration_id": None,
-        #     "pre_validated_at": None,
-        #     "validated_at": None,
-        #     "bank_code": None,
-        #     "bank_ispb": None,
-        #     "micro_deposit_status": None,
-        #     "micro_deposit_value": None,
-        #     "micro_deposit_method": None,
-        #     "valid": False,
-        #     "errors": [
-        #     {
-        #         "field": "cpf_cnpj",
-        #         "message": "CPF 35271737598 inválido",
-        #         "errorCode": "DBA_28"
-        #     },
-        #     {
-        #         "field": "account_digit",
-        #         "message": "Agência, conta ou dígito verificador da conta inválido.",
-        #         "errorCode": "DBA_30",
-        #         "suggestion": {
-        #         "account_digit": "5"
-        #         }
-        #     }
-        #     ],
-        #     "receipt_url": None,
-        #     "bank_receipt_url": None,
-        #     "pix_description": None,
-        #     "source": "API",
-        #     "data": None,
-        #     "person_type": None,
-        #     "person_type_details": None
-        # }
         "version": "v1",
-        "id": "379dcb53-8484-49af-b542-a59918608a76",
+        "id": "053d4115-464c-45eb-b026-a7040690fa9a",
         "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
         "object": "Validation",
-        "date": "2024-09-30T15:02:39-03:00",
+        "date": "2024-09-30T09:37:32-03:00",
         "data": {
-            "id": "a685c577-0a46-4388-be2c-5db1ad824f05",
+            "id": "125c310d-f208-47ef-a235-9524f08a5c4e",
             "integration_id": None,
-            "created_at": "2024-09-30T18:02:36.000Z",
             "pre_validated_at": None,
             "validated_at": None,
-            "bank_code": "237",
+            "bank_code": None,
             "bank_ispb": None,
-            "micro_deposit_status": "VALIDADO",
+            "micro_deposit_status": None,
             "micro_deposit_value": None,
-            "micro_deposit_method": "PIX",
-            "valid": True,
-            "errors": [],
-            "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.sdgChnHOdEApu_36NsScrhAIU3ExoyBqc-KZLffjuEY",
-            "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.f_Muw3VCHbXsggXomQrKyLK_x6woj_LqGd8aU2aHibo",
+            "micro_deposit_method": None,
+            "valid": False,
+            "errors": [
+            {
+                "field": "cpf_cnpj",
+                "message": "CPF 35271737598 inválido",
+                "errorCode": "DBA_28"
+            },
+            {
+                "field": "account_digit",
+                "message": "Agência, conta ou dígito verificador da conta inválido.",
+                "errorCode": "DBA_30",
+                "suggestion": {
+                "account_digit": "5"
+                }
+            }
+            ],
+            "receipt_url": None,
+            "bank_receipt_url": None,
             "pix_description": None,
             "source": "API",
-            "data": {
-            "name": "Transfeera Pagamentos",
-            "agency": "2232",
-            "account": "40605",
-            "cpf_cnpj": "27084098000169",
-            "bank_code": "237",
-            "account_type": "CONTA_CORRENTE",
-            "account_digit": "8"
-            },
-            "person_type": "legal_entity",
+            "data": None,
+            "person_type": None,
             "person_type_details": None
         }
+        # "version": "v1",
+        # "id": "379dcb53-8484-49af-b542-a59918608a76",
+        # "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
+        # "object": "Validation",
+        # "date": "2024-09-30T15:02:39-03:00",
+        # "data": {
+        #     "id": "a685c577-0a46-4388-be2c-5db1ad824f05",
+        #     "integration_id": None,
+        #     "created_at": "2024-09-30T18:02:36.000Z",
+        #     "pre_validated_at": None,
+        #     "validated_at": None,
+        #     "bank_code": "237",
+        #     "bank_ispb": None,
+        #     "micro_deposit_status": "VALIDADO",
+        #     "micro_deposit_value": None,
+        #     "micro_deposit_method": "PIX",
+        #     "valid": True,
+        #     "errors": [],
+        #     "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.sdgChnHOdEApu_36NsScrhAIU3ExoyBqc-KZLffjuEY",
+        #     "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.f_Muw3VCHbXsggXomQrKyLK_x6woj_LqGd8aU2aHibo",
+        #     "pix_description": None,
+        #     "source": "API",
+        #     "data": {
+        #     "name": "Transfeera Pagamentos",
+        #     "agency": "2232",
+        #     "account": "40605",
+        #     "cpf_cnpj": "27084098000169",
+        #     "bank_code": "237",
+        #     "account_type": "CONTA_CORRENTE",
+        #     "account_digit": "8"
+        #     },
+        #     "person_type": "legal_entity",
+        #     "person_type_details": None
+        # }
     }
 
     dados_clientes_json = json.dumps(dados_bancarios, ensure_ascii=False, indent=4)
