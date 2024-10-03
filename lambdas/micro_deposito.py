@@ -2,21 +2,18 @@ import json
 import requests
 import logging
 import os
+import re
 
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-# Criação do logger e definição do nível de log
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-
 if not logger.hasHandlers():
-    # Configuração do manipulador para saída no terminal
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
-
 
 load_dotenv()
 
@@ -26,23 +23,73 @@ CONTACERTA_API_CLIENT_ID= os.getenv('CONTACERTA_API_CLIENT_ID')
 CONTACERTA_API_CLIENT_SECRET= os.getenv('CONTACERTA_API_CLIENT_SECRET')
 USER_AGENT= os.getenv('USER_AGENT')
 
+
+def tratar_dados_bancarios(dados_bancarios):
+    # Extrair apenas os três primeiros dígitos do código do banco
+    bank_match = re.match(r'(\d{3})', dados_bancarios['bank'])
+    if bank_match:
+        dados_bancarios['bank'] = bank_match.group(1)
+    else:
+        raise ValueError("O código do banco deve ter exatamente 3 dígitos.")
+    
+    # Tratar o campo 'account' para separar a conta do dígito verificador
+    account_match = re.match(r'(\d+)-?(\d)?', dados_bancarios['account'])
+    if account_match:
+        dados_bancarios['account'] = account_match.group(1)  # Número da conta
+        # Extrair o dígito se houver, caso contrário, deixar como string vazia
+        dados_bancarios['account_digit'] = account_match.group(2) if account_match.group(2) else dados_bancarios['account'][-1]
+        dados_bancarios['account'] = dados_bancarios['account'][:-1]  # Remover o último dígito (verificador) da conta
+    
+    return dados_bancarios
+
+
 def lambda_handler(event, context):
     try:
         token_de_acesso, token_expirado = token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT)
 
         dados_bancarios = json.loads(event['body'])
 
-        micro_deposito(dados_bancarios, token_de_acesso)
+        # Tratar o campo "bank" para obter apenas o número e renomeá-lo para "bank_code"
+        bank_number = dados_bancarios['bank'].split(' ')[0]
+        dados_bancarios['bank_code'] = bank_number
+        del dados_bancarios['bank']  # Remove o campo 'bank', já que é substituído por 'bank_code'
 
-        return{
+        # Tratar o campo "account" para separar o número da conta do dígito
+        conta = dados_bancarios['account']
+        if '-' in conta:
+            numero_conta, digito_conta = conta.split('-')
+        else:
+            numero_conta, digito_conta = conta[:-1], conta[-1]
+
+        dados_bancarios['account'] = numero_conta
+        dados_bancarios['account_digit'] = digito_conta
+
+        # Transformar "account_type" em maiúsculo
+        dados_bancarios['account_type'] = dados_bancarios['account_type'].upper()
+
+        # LOG - Verificar os dados bancários tratados antes de enviar o microdepósito
+        logger.info(f"Dados bancários tratados: {json.dumps(dados_bancarios, ensure_ascii=False, indent=4)}")
+
+        # Criar o micro depósito usando os dados tratados
+        resultado_micro_deposito = micro_deposito(dados_bancarios, token_de_acesso)
+        micro_deposito_id = resultado_micro_deposito.get('id')
+
+
+        return {
             'statusCode': 200,
-            'body': json.dumps({'message': 'Dados processados com sucesso'})
+            'body': json.dumps({
+                'message': 'Dados processados com sucesso',
+                'micro_deposito_id': micro_deposito_id
+            })
         }
+
     except Exception as e:
+        logger.error(f"Erro ao processar os dados: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps("Erro interno no servidor. Verifique os logs para mais detalhes.")
         }
+
    
 
 def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT):
@@ -64,12 +111,9 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
     logger.info(f"Status code: {response.status_code}")
     logger.info(f"Response token_de_autorizacao: {response.text}")
 
-    # Verificação do status da resposta
     if response.status_code != 200:
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
     
-
-    # Processamento do conteúdo da resposta, após a verificação do status
     info_token = response.json()
 
     token = info_token.get('access_token')
@@ -97,18 +141,24 @@ def micro_deposito(payload, token):
 
     if response.status_code != 200:
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
-    return response.json().get('payload', {})
+    
+    response_data = response.json()
+    
+    # Campo 'id' dentro de 'payload':
+    response_data.get('payload', {}).get('id')
+
+    return response_data
 
 
 if __name__ == "__main__":
     dados_bancarios = {
+        # "card_id": "971537587",
         "name": "Transfeera Pagamentos",
         "cpf_cnpj": "27084098000169",
-        "bank_code": "237",
+        "bank": "237 - Banco ABC",
         "agency": "2232",
-        "account": "40605",
-        "account_digit": "8",
-        "account_type": "CONTA_CORRENTE",
+        "account": "406058",
+        "account_type": "conta_corrente",
         "integration_id": ""
     }
 
@@ -120,7 +170,3 @@ if __name__ == "__main__":
     context = None
 
     result = lambda_handler(event, context)
-    logger.info("Resultado da execução do lambda_handler: %s", result)
-
-
-
