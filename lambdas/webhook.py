@@ -19,10 +19,12 @@ load_dotenv()
 
 URL_PIPEFY = os.getenv('URL_PIPEFY')
 PIPEFY_TOKEN = os.getenv('PIPEFY_TOKEN')
+id_webhook = None
 
 def lambda_handler(event, context):
     try:
         resultado = processar_webhook_resposta(event['body'])
+        
         return resultado
     except Exception as e:
         logger.error("Erro interno no servidor: %s", str(e))
@@ -32,8 +34,14 @@ def lambda_handler(event, context):
         }
     
 def processar_webhook_resposta(body):
+
+    global id_webhook
+
     resposta = json.loads(body)
     validacao_data = resposta['data']
+
+    id_webhook = resposta['data']['id']
+    logger.info(f"ID do webhook capturado: {id_webhook}")
 
     if validacao_data.get('valid') is True:
         return processar_sucesso(validacao_data)
@@ -253,79 +261,79 @@ if __name__ == "__main__":
 
     node_id  = 971537587
     dados_bancarios = {
-        "version": "v1",
-        "id": "053d4115-464c-45eb-b026-a7040690fa9a",
-        "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
-        "object": "Validation",
-        "date": "2024-09-30T09:37:32-03:00",
-        "data": {
-            "id": "125c310d-f208-47ef-a235-9524f08a5c4e", #pegar esse id na resposta
-            "integration_id": None,
-            "pre_validated_at": None,
-            "validated_at": None,
-            "bank_code": None,
-            "bank_ispb": None,
-            "micro_deposit_status": None,
-            "micro_deposit_value": None,
-            "micro_deposit_method": None,
-            "valid": False,
-            "errors": [
-            {
-                "field": "cpf_cnpj",
-                "message": "CPF 35271737598 inválido",
-                "errorCode": "DBA_28"
-            },
-            {
-                "field": "account_digit",
-                "message": "Agência, conta ou dígito verificador da conta inválido.",
-                "errorCode": "DBA_30",
-                "suggestion": {
-                "account_digit": "5"
-                }
-            }
-            ],
-            "receipt_url": None,
-            "bank_receipt_url": None,
-            "pix_description": None,
-            "source": "API",
-            "data": None,
-            "person_type": None,
-            "person_type_details": None
-        }
         # "version": "v1",
-        # "id": "379dcb53-8484-49af-b542-a59918608a76",
+        # "id": "053d4115-464c-45eb-b026-a7040690fa9a",
         # "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
         # "object": "Validation",
-        # "date": "2024-09-30T15:02:39-03:00",
+        # "date": "2024-09-30T09:37:32-03:00",
         # "data": {
-        #     "id": "a685c577-0a46-4388-be2c-5db1ad824f05",
+        #     "id": "125c310d-f208-47ef-a235-9524f08a5c4e", #pegar esse id na resposta
         #     "integration_id": None,
-        #     "created_at": "2024-09-30T18:02:36.000Z",
         #     "pre_validated_at": None,
         #     "validated_at": None,
-        #     "bank_code": "237",
+        #     "bank_code": None,
         #     "bank_ispb": None,
-        #     "micro_deposit_status": "VALIDADO",
+        #     "micro_deposit_status": None,
         #     "micro_deposit_value": None,
-        #     "micro_deposit_method": "PIX",
-        #     "valid": True,
-        #     "errors": [],
-        #     "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.sdgChnHOdEApu_36NsScrhAIU3ExoyBqc-KZLffjuEY",
-        #     "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.f_Muw3VCHbXsggXomQrKyLK_x6woj_LqGd8aU2aHibo",
+        #     "micro_deposit_method": None,
+        #     "valid": False,
+        #     "errors": [
+        #     {
+        #         "field": "cpf_cnpj",
+        #         "message": "CPF 35271737598 inválido",
+        #         "errorCode": "DBA_28"
+        #     },
+        #     {
+        #         "field": "account_digit",
+        #         "message": "Agência, conta ou dígito verificador da conta inválido.",
+        #         "errorCode": "DBA_30",
+        #         "suggestion": {
+        #         "account_digit": "5"
+        #         }
+        #     }
+        #     ],
+        #     "receipt_url": None,
+        #     "bank_receipt_url": None,
         #     "pix_description": None,
         #     "source": "API",
-        #     "data": {
-        #     "name": "Transfeera Pagamentos",
-        #     "agency": "2232",
-        #     "account": "40605",
-        #     "cpf_cnpj": "27084098000169",
-        #     "bank_code": "237",
-        #     "account_type": "CONTA_CORRENTE",
-        #     "account_digit": "8"
-        #     },
-        #     "person_type": "legal_entity",
+        #     "data": None,
+        #     "person_type": None,
         #     "person_type_details": None
         # }
+        "version": "v1",
+        "id": "379dcb53-8484-49af-b542-a59918608a76",
+        "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
+        "object": "Validation",
+        "date": "2024-09-30T15:02:39-03:00",
+        "data": {
+            "id": "a685c577-0a46-4388-be2c-5db1ad824f05",
+            "integration_id": None,
+            "created_at": "2024-09-30T18:02:36.000Z",
+            "pre_validated_at": None,
+            "validated_at": None,
+            "bank_code": "237",
+            "bank_ispb": None,
+            "micro_deposit_status": "VALIDADO",
+            "micro_deposit_value": None,
+            "micro_deposit_method": "PIX",
+            "valid": True,
+            "errors": [],
+            "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.sdgChnHOdEApu_36NsScrhAIU3ExoyBqc-KZLffjuEY",
+            "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.f_Muw3VCHbXsggXomQrKyLK_x6woj_LqGd8aU2aHibo",
+            "pix_description": None,
+            "source": "API",
+            "data": {
+            "name": "Transfeera Pagamentos",
+            "agency": "2232",
+            "account": "40605",
+            "cpf_cnpj": "27084098000169",
+            "bank_code": "237",
+            "account_type": "CONTA_CORRENTE",
+            "account_digit": "8"
+            },
+            "person_type": "legal_entity",
+            "person_type_details": None
+        }
     }
 
     dados_clientes_json = json.dumps(dados_bancarios, ensure_ascii=False, indent=4)
