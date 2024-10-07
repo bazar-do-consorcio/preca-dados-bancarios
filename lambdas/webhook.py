@@ -50,6 +50,7 @@ def processar_webhook_resposta(body):
     
 
 def processar_sucesso(validacao_data):
+    global id_webhook
     dados_validos = 'VALIDO'
 
     # Obter a URL pré-assinada
@@ -74,7 +75,8 @@ def processar_sucesso(validacao_data):
             node_id="971537587",
             dados_validos=dados_validos,
             erro_dados_bancarios="",
-            caminho_arquivo=caminho_formatado  # Adiciona o caminho do comprovante
+            caminho_arquivo=caminho_formatado,  # Adiciona o caminho do comprovante
+            id_webhook=id_webhook
         )
         logger.info(f"Resposta da atualização: {resposta_atualizacao}")
 
@@ -108,7 +110,8 @@ def processar_erro(validacao_data):
     atualizar_campos_pipefy(
         node_id="971537587",
         dados_validos="INVALIDO",
-        erro_dados_bancarios=erros_formatados
+        erro_dados_bancarios=erros_formatados,
+        id_webhook=id_webhook
     )
 
     return {
@@ -184,8 +187,7 @@ def extrair_caminho(url_pre_assinada):
         return "/".join(partes[0:2]) + "/" + "/".join(partes[2:])  # Inclui "orgs/" e o restante
     return caminho  # Se não tiver partes suficientes, retorna o caminho completo
 
-
-def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, caminho_arquivo=None):
+def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, caminho_arquivo=None, id_webhook=None):
     url = 'https://api.pipefy.com/graphql'
     headers = {
         "Authorization": f"Bearer {PIPEFY_TOKEN}",
@@ -202,10 +204,20 @@ def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, c
         }
     }
     """
-    values = [{'fieldId': "dados_v_lidos", 'value': dados_validos}]  # Use a variável diretamente
+    
+    # Inicializa a lista de valores
+    values = [{'fieldId': "dados_v_lidos", 'value': dados_validos}] 
 
+    # Adiciona erro em caso de 'INVÁLIDO'
     if erro_dados_bancarios is not None:
         values.append({'fieldId': "erro_dados_bancarios", 'value': erro_dados_bancarios})
+
+    # Adiciona o transfeera_id se id_webhook não for None
+    
+    if id_webhook is not None:  # Verifica se id_webhook tem um valor
+        values.append({'fieldId': "transfeera_id", 'value': None}) # Primeiro, redefine o campo 'transfeera_id' para None antes de atualizar
+        values.append({'fieldId': "transfeera_id", 'value': id_webhook})  # Atualiza com o novo ID
+        logger.info("Atualizando transfeera_id para: %s", id_webhook)
 
     variables = {
         'nodeId': node_id,
@@ -218,24 +230,14 @@ def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, c
 
     if response.status_code == 200:
         logger.info("Campos atualizados com sucesso: %s", response.json())
-
-        # Atualiza o campo de comprovante se necessário
-        if dados_validos and caminho_arquivo:
-            mutation_comprovante = f"""
-            mutation {{
-                updateCardField(input: {{ card_id: {node_id}, field_id: "comprovante_microdeposito", new_value: ["{caminho_arquivo}"] }}) {{
-                    clientMutationId
-                    success
-                }}
-            }}
-            """
-            response_comprovante = requests.post(url, headers=headers, json={'query': mutation_comprovante})
-            logger.info("Comprovante atualizado: %s", response_comprovante.json())
-            return response_comprovante.json()
+        return response.json()
 
     else:
         logger.error("Erro ao atualizar os campos: %s - %s", response.status_code, response.text)
+        logger.error("Conteúdo da resposta: %s", response.content)
+
     return response.json()
+
 
 
 def atualizar_comprovante(node_id, caminho_arquivo):
