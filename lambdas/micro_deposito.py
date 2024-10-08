@@ -25,8 +25,6 @@ CONTACERTA_API_CLIENT_SECRET= os.getenv('CONTACERTA_API_CLIENT_SECRET')
 USER_AGENT= os.getenv('USER_AGENT')
 URL_PIPEFY = os.getenv('URL_PIPEFY')
 
-id_webhook = None
-
 
 def obter_cabecalhos():
     if os.getenv('ENVIRONMENT') == 'development':
