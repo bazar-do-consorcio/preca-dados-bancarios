@@ -53,16 +53,13 @@ def consultar_card_no_pipefy(transfeera_id):
     response = requests.post(URL_PIPEFY, headers=obter_cabecalhos(), json={"query": query})
 
     if response.status_code == 200:
-        data = response.json()
-        nodes = data.get("data", {}).get("findCards", {}).get("nodes", [])
+        nodes = response.json().get("data", {}).get("findCards", {}).get("nodes", [])
 
         if nodes:
             return nodes[0]
-        else:
-            print("Card não encontrado no Pipefy.")
+        logger.info(f"Card não encontrado no Pipefy.")
     else:
-        print(f"Erro ao buscar card no Pipefy: {response.status_code} - {response.text}")
-
+        logging.error(f"Erro ao buscar card no Pipefy: {response.status_code} - {response.text}")
     return None
 
     
@@ -107,8 +104,6 @@ def processar_sucesso(validacao_data):
 
     sucesso_upload = fazer_upload(url_pre_assinada, arquivo_url)
     if sucesso_upload:
-        logger.info("Upload realizado com sucesso.")
-
         # Atualizar campos no Pipefy
         resposta_atualizacao = atualizar_campos_pipefy(
             node_id="971537587",
@@ -196,17 +191,14 @@ def obter_url_pre_assinada(id_organizacao, nome_arquivo):
 
 
 def fazer_upload(url_pre_assinada, arquivo):
-    headers = {
-        'Content-Type': 'application/pdf'
-    }
-    response = requests.put(url_pre_assinada, headers=headers, data=requests.get(arquivo).content)
+    response = requests.put(url_pre_assinada, headers={'Content-Type': 'application/pdf'}, data=requests.get(arquivo).content)
 
     if response.status_code == 200:
         logger.info("Upload realizado com sucesso.")
     else:
         logger.error(f"Falha no upload. Status Code: {response.status_code}, Resposta: {response.text}")
 
-    return response.status_code == 200
+    return response.ok
 
 
 def extrair_caminho(url_pre_assinada):
@@ -284,74 +276,74 @@ def atualizar_comprovante(node_id, caminho_arquivo):
 
 if __name__ == "__main__":
     dados_bancarios = {
-        "version": "v1",
-        "id": "6a75b919-2716-4d8f-a8a3-bc6bd7b3a22f",
-        "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
-        "object": "Validation",
-        "date": "2024-10-07T10:26:05-03:00",
-        "data": {
-            "id": "ea793454-9f0e-4ff6-8d6b-12813c4d64db",
-            "integration_id": None,
-            "pre_validated_at": None,
-            "validated_at": None,
-            "bank_code": None,
-            "bank_ispb": None,
-            "micro_deposit_status": None,
-            "micro_deposit_value": None,
-            "micro_deposit_method": None,
-            "valid": False,
-            "errors": [
-            {
-                "field": "account_digit",
-                "message": "Conta ou dígito verificador da conta inválido.",
-                "errorCode": "DBA_20",
-                "suggestion": {
-                "account_digit": "6"
-                }
-            }
-            ],
-            "receipt_url": None,
-            "bank_receipt_url": None,
-            "pix_description": None,
-            "source": "API",
-            "data": None,
-            "person_type": None,
-            "person_type_details": None
-        }
         # "version": "v1",
-        # "id": "3f66df44-b6a0-45f8-b1a5-4e1b3f60a5bb",
+        # "id": "6a75b919-2716-4d8f-a8a3-bc6bd7b3a22f",
         # "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
         # "object": "Validation",
-        # "date": "2024-10-08T11:36:02-03:00",
+        # "date": "2024-10-07T10:26:05-03:00",
         # "data": {
         #     "id": "ea793454-9f0e-4ff6-8d6b-12813c4d64db",
         #     "integration_id": None,
-        #     "created_at": "2024-10-08T14:35:57.000Z",
         #     "pre_validated_at": None,
         #     "validated_at": None,
-        #     "bank_code": "237",
+        #     "bank_code": None,
         #     "bank_ispb": None,
-        #     "micro_deposit_status": "VALIDADO",
+        #     "micro_deposit_status": None,
         #     "micro_deposit_value": None,
-        #     "micro_deposit_method": "PIX",
-        #     "valid": True,
-        #     "errors": [],
-        #     "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.EU1CUSt_avnk4kZqv_cau1tHF6c8a1LauC9DIpkrDEg",
-        #     "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.gghbKV5o50ulSyJxwGHuE_GMMpeS-hC-IElVvC6un9g",
+        #     "micro_deposit_method": None,
+        #     "valid": False,
+        #     "errors": [
+        #     {
+        #         "field": "account_digit",
+        #         "message": "Conta ou dígito verificador da conta inválido.",
+        #         "errorCode": "DBA_20",
+        #         "suggestion": {
+        #         "account_digit": "6"
+        #         }
+        #     }
+        #     ],
+        #     "receipt_url": None,
+        #     "bank_receipt_url": None,
         #     "pix_description": None,
         #     "source": "API",
-        #     "data": {
-        #     "name": "Transfeera Pagamentos",
-        #     "agency": "2232",
-        #     "account": "40605",
-        #     "cpf_cnpj": "27084098000169",
-        #     "bank_code": "237",
-        #     "account_type": "CONTA_CORRENTE",
-        #     "account_digit": "8"
-        #     },
-        #     "person_type": "legal_entity",
+        #     "data": None,
+        #     "person_type": None,
         #     "person_type_details": None
         # }
+        "version": "v1",
+        "id": "3f66df44-b6a0-45f8-b1a5-4e1b3f60a5bb",
+        "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
+        "object": "Validation",
+        "date": "2024-10-08T11:36:02-03:00",
+        "data": {
+            "id": "ea793454-9f0e-4ff6-8d6b-12813c4d64db",
+            "integration_id": None,
+            "created_at": "2024-10-08T14:35:57.000Z",
+            "pre_validated_at": None,
+            "validated_at": None,
+            "bank_code": "237",
+            "bank_ispb": None,
+            "micro_deposit_status": "VALIDADO",
+            "micro_deposit_value": None,
+            "micro_deposit_method": "PIX",
+            "valid": True,
+            "errors": [],
+            "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.EU1CUSt_avnk4kZqv_cau1tHF6c8a1LauC9DIpkrDEg",
+            "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.gghbKV5o50ulSyJxwGHuE_GMMpeS-hC-IElVvC6un9g",
+            "pix_description": None,
+            "source": "API",
+            "data": {
+            "name": "Transfeera Pagamentos",
+            "agency": "2232",
+            "account": "40605",
+            "cpf_cnpj": "27084098000169",
+            "bank_code": "237",
+            "account_type": "CONTA_CORRENTE",
+            "account_digit": "8"
+            },
+            "person_type": "legal_entity",
+            "person_type_details": None
+        }
     }
 
     dados_clientes_json = json.dumps(dados_bancarios, ensure_ascii=False, indent=4)
