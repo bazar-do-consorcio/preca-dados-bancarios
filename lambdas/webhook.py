@@ -19,12 +19,10 @@ load_dotenv()
 
 URL_PIPEFY = os.getenv('URL_PIPEFY')
 PIPEFY_TOKEN = os.getenv('PIPEFY_TOKEN')
-id_webhook = None
 
 def lambda_handler(event, context):
     try:
         resultado = processar_webhook_resposta(event['body'])
-        
         return resultado
     except Exception as e:
         logger.error("Erro interno no servidor: %s", str(e))
@@ -33,24 +31,70 @@ def lambda_handler(event, context):
             'body': json.dumps("Erro interno no servidor. Verifique os logs para mais detalhes.", ensure_ascii=False)
         }
     
+
+def consultar_card_no_pipefy(transfeera_id):
+    query = f"""
+    {{
+        findCards(pipeId: 303852432
+                  search: {{fieldId: "transfeera_id", fieldValue: "{transfeera_id}"}}
+                  first: 10) {{
+            nodes {{
+                id
+                fields {{
+                    name
+                    value
+                }}
+            }}
+        }}
+    }}"""
+    
+    headers = {
+        "Authorization": f"Bearer {PIPEFY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(URL_PIPEFY, json={"query": query}, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        nodes = data.get("data", {}).get("findCards", {}).get("nodes", [])
+
+        if nodes:
+            return nodes[0]
+        else:
+            print("Card não encontrado no Pipefy.")
+    else:
+        print(f"Erro ao buscar card no Pipefy: {response.status_code} - {response.text}")
+
+    return None
+
+    
 def processar_webhook_resposta(body):
-
-    global id_webhook
-
     resposta = json.loads(body)
     validacao_data = resposta['data']
 
-    id_webhook = resposta['data']['id']
-    logger.info(f"ID do webhook capturado: {id_webhook}")
+    # Obtém o transfeera_id do webhook
+    transfeera_id = validacao_data.get('id')
 
-    if validacao_data.get('valid') is True:
-        return processar_sucesso(validacao_data)
+    if transfeera_id:
+        # Buscar o card com o transfeera_id
+        card = consultar_card_no_pipefy(transfeera_id)
+        
+        if card:
+            if validacao_data.get('valid') is True:
+                return processar_sucesso(validacao_data)
+            else:
+                return processar_erro(validacao_data)
     else:
-        return processar_erro(validacao_data)
+            return {
+                'statusCode': 404,
+                'body': json.dumps(f"Card com transfeera_id {transfeera_id} não encontrado no Pipefy.")
+            }
+
+    
     
 
 def processar_sucesso(validacao_data):
-    global id_webhook
     dados_validos = 'VALIDO'
 
     # Obter a URL pré-assinada
@@ -75,8 +119,7 @@ def processar_sucesso(validacao_data):
             node_id="971537587",
             dados_validos=dados_validos,
             erro_dados_bancarios="",
-            caminho_arquivo=caminho_formatado,  # Adiciona o caminho do comprovante
-            id_webhook=id_webhook
+            caminho_arquivo=caminho_formatado  # Adiciona o caminho do comprovante
         )
         logger.info(f"Resposta da atualização: {resposta_atualizacao}")
 
@@ -110,8 +153,7 @@ def processar_erro(validacao_data):
     atualizar_campos_pipefy(
         node_id="971537587",
         dados_validos="INVALIDO",
-        erro_dados_bancarios=erros_formatados,
-        id_webhook=id_webhook
+        erro_dados_bancarios=erros_formatados
     )
 
     return {
@@ -187,7 +229,8 @@ def extrair_caminho(url_pre_assinada):
         return "/".join(partes[0:2]) + "/" + "/".join(partes[2:])  # Inclui "orgs/" e o restante
     return caminho  # Se não tiver partes suficientes, retorna o caminho completo
 
-def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, caminho_arquivo=None, id_webhook=None):
+
+def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, caminho_arquivo=None):
     url = 'https://api.pipefy.com/graphql'
     headers = {
         "Authorization": f"Bearer {PIPEFY_TOKEN}",
@@ -204,20 +247,10 @@ def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, c
         }
     }
     """
-    
-    # Inicializa a lista de valores
-    values = [{'fieldId': "dados_v_lidos", 'value': dados_validos}] 
+    values = [{'fieldId': "dados_v_lidos", 'value': dados_validos}]  # Use a variável diretamente
 
-    # Adiciona erro em caso de 'INVÁLIDO'
     if erro_dados_bancarios is not None:
         values.append({'fieldId': "erro_dados_bancarios", 'value': erro_dados_bancarios})
-
-    # Adiciona o transfeera_id se id_webhook não for None
-    
-    if id_webhook is not None:  # Verifica se id_webhook tem um valor
-        values.append({'fieldId': "transfeera_id", 'value': None}) # Primeiro, redefine o campo 'transfeera_id' para None antes de atualizar
-        values.append({'fieldId': "transfeera_id", 'value': id_webhook})  # Atualiza com o novo ID
-        logger.info("Atualizando transfeera_id para: %s", id_webhook)
 
     variables = {
         'nodeId': node_id,
@@ -230,14 +263,24 @@ def atualizar_campos_pipefy(node_id, dados_validos, erro_dados_bancarios=None, c
 
     if response.status_code == 200:
         logger.info("Campos atualizados com sucesso: %s", response.json())
-        return response.json()
+
+        # Atualiza o campo de comprovante se necessário
+        if dados_validos and caminho_arquivo:
+            mutation_comprovante = f"""
+            mutation {{
+                updateCardField(input: {{ card_id: {node_id}, field_id: "comprovante_microdeposito", new_value: ["{caminho_arquivo}"] }}) {{
+                    clientMutationId
+                    success
+                }}
+            }}
+            """
+            response_comprovante = requests.post(url, headers=headers, json={'query': mutation_comprovante})
+            logger.info("Comprovante atualizado: %s", response_comprovante.json())
+            return response_comprovante.json()
 
     else:
         logger.error("Erro ao atualizar os campos: %s - %s", response.status_code, response.text)
-        logger.error("Conteúdo da resposta: %s", response.content)
-
     return response.json()
-
 
 
 def atualizar_comprovante(node_id, caminho_arquivo):
@@ -260,16 +303,14 @@ def atualizar_comprovante(node_id, caminho_arquivo):
 
 
 if __name__ == "__main__":
-
-    node_id  = 971537587
     dados_bancarios = {
         # "version": "v1",
-        # "id": "053d4115-464c-45eb-b026-a7040690fa9a",
+        # "id": "6a75b919-2716-4d8f-a8a3-bc6bd7b3a22f",
         # "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
         # "object": "Validation",
-        # "date": "2024-09-30T09:37:32-03:00",
+        # "date": "2024-10-07T10:26:05-03:00",
         # "data": {
-        #     "id": "125c310d-f208-47ef-a235-9524f08a5c4e", #pegar esse id na resposta
+        #     "id": "ea793454-9f0e-4ff6-8d6b-12813c4d64db",
         #     "integration_id": None,
         #     "pre_validated_at": None,
         #     "validated_at": None,
@@ -281,16 +322,11 @@ if __name__ == "__main__":
         #     "valid": False,
         #     "errors": [
         #     {
-        #         "field": "cpf_cnpj",
-        #         "message": "CPF 35271737598 inválido",
-        #         "errorCode": "DBA_28"
-        #     },
-        #     {
         #         "field": "account_digit",
-        #         "message": "Agência, conta ou dígito verificador da conta inválido.",
-        #         "errorCode": "DBA_30",
+        #         "message": "Conta ou dígito verificador da conta inválido.",
+        #         "errorCode": "DBA_20",
         #         "suggestion": {
-        #         "account_digit": "5"
+        #         "account_digit": "6"
         #         }
         #     }
         #     ],
@@ -303,14 +339,14 @@ if __name__ == "__main__":
         #     "person_type_details": None
         # }
         "version": "v1",
-        "id": "379dcb53-8484-49af-b542-a59918608a76",
+        "id": "3f66df44-b6a0-45f8-b1a5-4e1b3f60a5bb",
         "account_id": "e22ca638-4d5f-4310-85c0-3eb370e82345",
         "object": "Validation",
-        "date": "2024-09-30T15:02:39-03:00",
+        "date": "2024-10-08T11:36:02-03:00",
         "data": {
-            "id": "a685c577-0a46-4388-be2c-5db1ad824f05",
+            "id": "ea793454-9f0e-4ff6-8d6b-12813c4d64db",
             "integration_id": None,
-            "created_at": "2024-09-30T18:02:36.000Z",
+            "created_at": "2024-10-08T14:35:57.000Z",
             "pre_validated_at": None,
             "validated_at": None,
             "bank_code": "237",
@@ -320,8 +356,8 @@ if __name__ == "__main__":
             "micro_deposit_method": "PIX",
             "valid": True,
             "errors": [],
-            "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.sdgChnHOdEApu_36NsScrhAIU3ExoyBqc-KZLffjuEY",
-            "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NTcwMzMiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3Mjc3MTkzNTksImV4cCI6MTczMjkwMzM1OX0.f_Muw3VCHbXsggXomQrKyLK_x6woj_LqGd8aU2aHibo",
+            "receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJ0cmFuc2ZlZXJhIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.EU1CUSt_avnk4kZqv_cau1tHF6c8a1LauC9DIpkrDEg",
+            "bank_receipt_url": "https://api-sandbox.transfeera.com/pub/receipt/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2Zlcl9pZCI6IjE0NjQ0MTYiLCJyZWNlaXB0X3R5cGUiOiJiYW5rIiwiYmF0Y2hfdHlwZSI6IlRSQU5TRkVSRU5DSUEiLCJpYXQiOjE3MjgzOTgxNjIsImV4cCI6MTczMzU4MjE2Mn0.gghbKV5o50ulSyJxwGHuE_GMMpeS-hC-IElVvC6un9g",
             "pix_description": None,
             "source": "API",
             "data": {

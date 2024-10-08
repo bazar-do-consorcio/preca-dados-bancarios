@@ -3,6 +3,7 @@ import requests
 import logging
 import os
 import re
+import boto3
 
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -22,6 +23,32 @@ CONTACERTA_API_HOST= os.getenv('CONTACERTA_API_HOST')
 CONTACERTA_API_CLIENT_ID= os.getenv('CONTACERTA_API_CLIENT_ID')
 CONTACERTA_API_CLIENT_SECRET= os.getenv('CONTACERTA_API_CLIENT_SECRET')
 USER_AGENT= os.getenv('USER_AGENT')
+URL_PIPEFY = os.getenv('URL_PIPEFY')
+
+id_webhook = None
+
+
+def obter_cabecalhos():
+    if os.getenv('ENVIRONMENT') == 'development':
+        secret_token = os.getenv('PIPEFY_TOKEN')
+    else:
+        # Cria cliente para Secrets Manager
+        client = boto3.client('secretsmanager', region_name='us-east-1')
+        
+        # Recupera o segredo
+        secret_name = 'secret_tokens'
+        try:
+            response = client.get_secret_value(SecretId=secret_name)
+            secret = json.loads(response['SecretString'])
+            secret_token = secret['pipefy_token']
+        except Exception as e:
+            logger.error("Erro ao recuperar o segredo %s ", str(e), exc_info=True)
+            raise
+
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {secret_token}'
+    }
 
 
 def tratar_dados_bancarios(dados_bancarios):
@@ -74,6 +101,8 @@ def lambda_handler(event, context):
         resultado_micro_deposito = micro_deposito(dados_bancarios, token_de_acesso)
         micro_deposito_id = resultado_micro_deposito.get('id')
 
+        # Salvar id do micro depósito no card do pipefy
+        salvar_id = atualizar_campo_transfeera_id(971537587, micro_deposito_id)
 
         return {
             'statusCode': 200,
@@ -91,7 +120,6 @@ def lambda_handler(event, context):
         }
 
    
-
 def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT):
     url = f'{LOGIN_API_HOST}/authorization'
 
@@ -108,8 +136,7 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
 
     response = requests.post(url, headers=headers, json=payload)
 
-    logger.info(f"Status code: {response.status_code}")
-    logger.info(f"Response token_de_autorizacao: {response.text}")
+    logger.info(f"Response token_de_autorizacao:  {response.status_code}, {response.text}")
 
     if response.status_code != 200:
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
@@ -136,23 +163,51 @@ def micro_deposito(payload, token):
 
     response = requests.post(url, headers=headers, json=payload)
 
-    logger.info(f"Status code: {response.status_code}")
-    logger.info(f"Response micro_deposito: {response.text}")
+    logger.info(f"Response micro_deposito: {response.status_code}, {response.text}")
 
     if response.status_code != 200:
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
     
     response_data = response.json()
-    
     # Campo 'id' dentro de 'payload':
     response_data.get('payload', {}).get('id')
 
     return response_data
 
 
+def atualizar_campo_transfeera_id(node_id, transfeera_id):
+    mutation = """
+    mutation ($nodeId: ID!, $values: [NodeFieldValueInput!]!) {
+        updateFieldsValues(input: {
+            nodeId: $nodeId,
+            values: $values
+        }) {
+            clientMutationId
+        }
+    }
+    """
+    variables = {
+        "nodeId": str(node_id),
+        "values": [
+            {
+                "fieldId": "transfeera_id",  
+                "value": transfeera_id    
+            }
+        ]
+    }
+
+    response = requests.post(URL_PIPEFY, json={'query': mutation, 'variables': variables}, headers=obter_cabecalhos())
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Erro ao atualizar o campo no Pipefy: {response.status_code}, {response.text}")
+
+
+
 if __name__ == "__main__":
     dados_bancarios = {
-        # "card_id": "971537587",
+        # "node_id": "971537587",
         "name": "Transfeera Pagamentos",
         "cpf_cnpj": "27084098000169",
         "bank": "237 - Banco ABC",
