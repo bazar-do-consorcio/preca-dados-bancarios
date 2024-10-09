@@ -170,6 +170,10 @@ cython_debug/
 autenticacao_google.json
 
 *.doc
+*.crt
+*.key
 
 private.key
 public.csr
+21b133c6-2179-470e-80c2-b1859950ce22
+21b133c6-2179-470e-80c2-b1859950ce22.crt
