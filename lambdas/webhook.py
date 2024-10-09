@@ -89,7 +89,7 @@ def processar_webhook_resposta(body):
 def processar_sucesso(validacao_data, node_id):
     dados_validos = 'VALIDO'
 
-    # Obter a URL pré-assinada
+    # Obter a URL pré-assinada, ID da organização
     url_pre_assinada = obter_url_pre_assinada("301247725", "comprovante_microdeposito.pdf")
     logger.info(f"URL pré-assinada obtida: {url_pre_assinada}")
 
