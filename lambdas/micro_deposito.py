@@ -18,6 +18,12 @@ if not logger.hasHandlers():
 
 load_dotenv()
 
+# Caminho para o certificado e chave privada
+certificado_prod = (
+    r'C:\Users\kelly.vasconcellos_b\Develop\transfeera\preca-dados-bancarios\21b133c6-2179-470e-80c2-b1859950ce22.crt',
+    r'C:\Users\kelly.vasconcellos_b\Develop\transfeera\preca-dados-bancarios\private.key'
+)
+
 LOGIN_API_HOST= os.getenv('LOGIN_API_HOST')
 CONTACERTA_API_HOST= os.getenv('CONTACERTA_API_HOST')
 CONTACERTA_API_CLIENT_ID= os.getenv('CONTACERTA_API_CLIENT_ID')
@@ -130,7 +136,7 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
         "client_secret": CONTACERTA_API_CLIENT_SECRET
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, json=payload, cert=certificado_prod)
 
     logger.info(f"Response token_de_autorizacao:  {response.status_code}, {response.text}")
 
@@ -157,7 +163,7 @@ def micro_deposito(payload, token):
         "content-type": "application/json"
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, json=payload, cert=certificado_prod)
 
     logger.info(f"Response micro_deposito: {response.status_code}, {response.text}")
 
