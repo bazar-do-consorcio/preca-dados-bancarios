@@ -7,12 +7,10 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from micro_deposito import obter_cabecalhos
 
-# Criação do logger e definição do nível de log
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 if not logger.hasHandlers():
-    # Configuração do manipulador para saída no terminal
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
@@ -105,12 +103,11 @@ def processar_sucesso(validacao_data, node_id):
 
     sucesso_upload = fazer_upload(url_pre_assinada, arquivo_url)
     if sucesso_upload:
-        # Atualizar campos no Pipefy
         atualizar_campos_pipefy(
             node_id=node_id,
             dados_validos=dados_validos,
             erro_dados_bancarios="",
-            caminho_arquivo=caminho_formatado  # Adiciona o caminho do comprovante
+            caminho_arquivo=caminho_formatado 
         )
 
         # Verifique se o comprovante precisa ser atualizado
@@ -140,7 +137,6 @@ def processar_erro(validacao_data, node_id):
     erros_formatados = formatar_erros(erros)
     logger.info(f"Validacao data: {validacao_data}")
 
-    # Atualizar campos no Pipefy com erro
     atualizar_campos_pipefy(
         node_id=node_id,
         dados_validos="INVALIDO",

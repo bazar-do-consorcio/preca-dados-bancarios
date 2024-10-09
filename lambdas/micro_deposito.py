@@ -92,14 +92,12 @@ def lambda_handler(event, context):
         # Transformar "account_type" em maiúsculo
         dados_bancarios['account_type'] = dados_bancarios['account_type'].upper()
 
-        # LOG - Verificar os dados bancários tratados antes de enviar o microdepósito
         logger.info(f"Dados bancários tratados: {json.dumps(dados_bancarios, ensure_ascii=False, indent=4)}")
 
         # Criar o micro depósito usando os dados tratados
         resultado_micro_deposito = micro_deposito(dados_bancarios, token_de_acesso)
         micro_deposito_id = resultado_micro_deposito.get('id')
 
-        # Salvar id do micro depósito no card do pipefy
         salvar_id = atualizar_campo_transfeera_id(971537587, micro_deposito_id)
 
         return {
@@ -167,7 +165,6 @@ def micro_deposito(payload, token):
         raise Exception(f"Erro ao criar micro-deposito {response.status_code}, {response.text}")
     
     response_data = response.json()
-    # Campo 'id' dentro de 'payload':
     response_data.get('payload', {}).get('id')
 
     return response_data
