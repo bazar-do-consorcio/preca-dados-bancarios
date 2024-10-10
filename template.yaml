@@ -1,0 +1,211 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Este template AWS SAM implanta uma função Lambda e cria o API Gateway, a lambda gera micro-deposito na Transfeera e recebe eventos via webhook.
+        
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - prod
+      - staging
+    Description: Ambiente de implantação para a aplicação
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  MicroDeposito:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !If [IsProd, 'micro-deposito', 'micro-deposito-sandbox']
+      CodeUri: ./lambdas/micro_deposito
+      Handler: micro_deposito.lambda_handler
+      Runtime: python3.12
+      Role: !GetAtt MicroDepositoRole.Arn
+      VpcConfig:
+          SecurityGroupIds:
+           - !If [IsProd, "{{SECURITY_GROUP_PROD}}", "{{SECURITY_GROUP_STAGING}}"]
+          SubnetIds:
+           - !If [IsProd, "{{SUBNET_A_PROD}}", "{{SUBNET_A_STAGING}}"]
+           - !If [IsProd, "{{SUBNET_B_PROD}}", "{{SUBNET_B_STAGING}}"]
+      Environment:
+        Variables:
+          URL_PIPEFY: 'https://api.pipefy.com/graphql'
+
+          LOGIN_API_HOST: 
+            !If [IsProd, 'https://login-api.mtls.transfeera.com', 'https://login-api-sandbox.transfeera.com']
+
+          CONTACERTA_API_HOST:
+            !If [IsProd, 'https://contacerta-api.mtls.transfeera.com', 'https://contacerta-api-sandbox.transfeera.com']    
+
+          CONTACERTA_API_CLIENT_ID:
+            !If [IsProd, '210e423d-79c2-4a91-a199-ebb1386f8697', '49666578-e09f-41b9-8509-c4bee9e6b54c']  
+            
+          CONTACERTA_API_CLIENT_SECRET:
+            !If [IsProd, '5a4a11ab-1183-4eaa-b795-d139f6fcac10bae59c3d-9204-4fe2-9e92-b84624c76809', '2671ffb8-8ae1-4f12-ab56-279a963e070157ba8042-861e-443f-87e7-0f591fd8e73a']
+
+          USER_AGENT:
+            !If [IsProd, 'vinicius.uehara@bazardoconsorcio.com.br', 'kelly.vasconcellos@bazardoconsorcio.com.br']   
+      Events:
+        MicroDeposito:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MicroDepositoApi
+            Path: /micro_deposito
+            Method: POST
+            Auth:
+              ApiKeyRequired: true
+
+
+  MicroDepositoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MicroDepositoPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: '*'
+
+  Webhook:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !If [IsProd, 'webhook', 'webhook-sandbox']
+      CodeUri: ./lambdas/webhook
+      Handler: webhook.lambda_handler
+      Runtime: python3.12
+      Role: !GetAtt WebhookRole.Arn
+      VpcConfig:
+          SecurityGroupIds:
+           - !If [IsProd, "{{SECURITY_GROUP_PROD}}", "{{SECURITY_GROUP_STAGING}}"]
+          SubnetIds:
+           - !If [IsProd, "{{SUBNET_A_PROD}}", "{{SUBNET_A_STAGING}}"]
+           - !If [IsProd, "{{SUBNET_B_PROD}}", "{{SUBNET_B_STAGING}}"]
+      Environment:
+        Variables:
+          URL_PIPEFY: 'https://api.pipefy.com/graphql'  
+      Events:
+        Webhook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MicroDepositoApi
+            Path: /webhook
+            Method: POST
+            Auth:
+              ApiKeyRequired: true      
+
+
+  WebhookRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WebhookPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: '*'
+
+  MicroDepositoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+
+  ApiKeyMicroDeposito:
+    Type: 'AWS::ApiGateway::ApiKey'
+    Properties:
+      Name: !If [IsProd, "microdeposito-Key", "microdeposito-sandbox-key"]
+      Description: CloudFormation API Key V1
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref MicroDepositoApi
+          StageName: prod
+
+  usagePlanMicroDeposito:
+    Type: 'AWS::ApiGateway::UsagePlan'
+    Properties:
+      ApiStages:
+        - ApiId: !Ref MicroDepositoApi
+          Stage: prod
+      Description: Usage Plan MicroDeposito
+      Quota:
+        Limit: 10000
+        Period: MONTH
+      Throttle:
+        BurstLimit: 200
+        RateLimit: 100
+      UsagePlanName: !If [IsProd, "microdeposito-UsagePlan", "microdeposito-sandbox-UsagePlan"]
+  
+  usagePlanKeyMicroDeposito:
+    Type: 'AWS::ApiGateway::UsagePlanKey'
+    Properties:
+      KeyId: !Ref ApiKeyMicroDeposito
+      KeyType: API_KEY
+      UsagePlanId: !Ref usagePlanMicroDeposito
+      
+
+  
+
+  MicroDepositoApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: apigateway.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonApiGatewayPushToCloudWatchLogs
+
+  MicroDepositoApiAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt MicroDepositoApiRole.Arn

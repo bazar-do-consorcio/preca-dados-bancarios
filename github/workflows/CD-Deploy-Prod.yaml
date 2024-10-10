@@ -1,0 +1,53 @@
+name: Deploy SAM Application in Prod
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Configure AWS credentials from OIDC provider
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_PROD }}:role/GitHubAction-AssumeRoleWithAction
+        aws-region: us-east-1
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.11'
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v2
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install aws-sam-cli
+
+    - name: Replace SG and Subnets in template file - Production
+      run: |
+        sed -i 's|{{SECURITY_GROUP_PROD}}|${{secrets.SECURITY_GROUP_PROD}}|g' template.yaml
+        sed -i 's|{{SUBNET_A_PROD}}|${{secrets.SUBNET_A_PROD}}|g' template.yaml
+        sed -i 's|{{SUBNET_B_PROD}}|${{secrets.SUBNET_B_PROD}}|g' template.yaml
+
+    - name: Build SAM application
+      run: sam build
+
+    - name: Deploy SAM application
+      run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --stack-name micro-deposito --resolve-s3 --resolve-image-repos --capabilities CAPABILITY_IAM --parameter-overrides Environment=prod

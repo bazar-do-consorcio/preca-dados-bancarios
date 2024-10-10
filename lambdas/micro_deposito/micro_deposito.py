@@ -55,6 +55,29 @@ def obter_cabecalhos():
     }
 
 
+def obter_certificados():
+    if os.getenv('ENVIRONMENT') == 'development':
+        certificado_prod = ( 
+            r'C:\Users\kelly.vasconcellos_b\Develop\transfeera\preca-dados-bancarios\21b133c6-2179-470e-80c2-b1859950ce22.crt', 
+            r'C:\Users\kelly.vasconcellos_b\Develop\transfeera\preca-dados-bancarios\private.key')
+    else:
+        # Cria cliente para Secrets Manager
+        client = boto3.client('secretsmanager', region_name='us-east-1')
+        secret_name = 'secret_tokens'
+        try:
+            response = client.get_secret_value(SecretId=secret_name)
+            secret = json.loads(response['SecretString'])
+            certificado_prod = (
+                secret['transfeera_certificate'],  
+                secret['transfeera_private_key']  
+            )
+        except Exception as e:
+            logger.error("Erro ao recuperar o segredo %s ", str(e), exc_info=True)
+            raise
+
+    return certificado_prod
+
+
 def tratar_dados_bancarios(dados_bancarios):
     # Extrair apenas os três primeiros dígitos do código do banco
     bank_match = re.match(r'(\d{3})', dados_bancarios['bank'])
@@ -125,6 +148,8 @@ def lambda_handler(event, context):
 def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET, USER_AGENT):
     url = f'{LOGIN_API_HOST}/authorization'
 
+    certificado = obter_certificados()
+
     headers = {
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json"
@@ -136,7 +161,7 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
         "client_secret": CONTACERTA_API_CLIENT_SECRET
     }
 
-    response = requests.post(url, headers=headers, json=payload, cert=certificado_prod)
+    response = requests.post(url, headers=headers, json=payload, cert=certificado)
 
     logger.info(f"Response token_de_autorizacao:  {response.status_code}, {response.text}")
 
@@ -156,6 +181,8 @@ def token_de_autorizacao(CONTACERTA_API_CLIENT_ID, CONTACERTA_API_CLIENT_SECRET,
 def micro_deposito(payload, token):
     url = f'{CONTACERTA_API_HOST}/validate?type=MICRO_DEPOSITO'
 
+    certificado = obter_certificados()
+
     headers = {
         "Authorization": f"Bearer {token}",
         "User-Agent": USER_AGENT,
@@ -163,7 +190,7 @@ def micro_deposito(payload, token):
         "content-type": "application/json"
     }
 
-    response = requests.post(url, headers=headers, json=payload, cert=certificado_prod)
+    response = requests.post(url, headers=headers, json=payload, cert=certificado)
 
     logger.info(f"Response micro_deposito: {response.status_code}, {response.text}")
 
